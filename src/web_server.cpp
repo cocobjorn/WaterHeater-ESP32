@@ -1,15 +1,15 @@
 #include "web_server.h"
 #include "sensors.h"
 #include "terminal_commands.h"
+#include "terminal_manager.h"
+#include "config_storage.h"
+#include "system_controller.h"
 #include <Arduino.h>
 #include <HardwareSerial.h>
 #include <SPIFFS.h>
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-// Внешний объект датчиков
-extern Sensors sensors;
 
 void WebServerManager::begin() {
   // Инициализация SPIFFS
@@ -20,10 +20,192 @@ void WebServerManager::begin() {
     return;
   }
   
+  // Инициализация состояния WiFi сессии
+  wifiSessionActive = false;
+  sessionStartTime = 0;
+  
+  // Настройка маршрутов для WebServer
+  setupRoutes();
+  
+  if (DEBUG_SERIAL) {
+    Serial.println("Web server initialized (WiFi session mode)");
+    Serial.println("Press BOOT button 3 times to start WiFi session");
+  }
+}
+
+void WebServerManager::handleClient() {
+  // Обрабатываем клиентов только если WiFi сессия активна
+  if (wifiSessionActive) {
+    server.handleClient();
+    
+    // Периодическая диагностика датчика протока во время WiFi сессии (каждые 30 секунд)
+    static unsigned long lastDiagnosticTime = 0;
+    if (millis() - lastDiagnosticTime > 30000) {
+      if (systemController && DEBUG_SERIAL) {
+        Serial.println("--- ПЕРИОДИЧЕСКАЯ ДИАГНОСТИКА ДАТЧИКА ПОТОКА (WiFi активен) ---");
+        Serial.print("Пин датчика потока (GPIO35): ");
+        Serial.println(digitalRead(FLOW_SENSOR_PIN) ? "HIGH" : "LOW");
+        Serial.print("Состояние датчика: ");
+        Serial.println(systemController->getSensors().isFlowSensorWorking() ? "РАБОТАЕТ" : "НЕ РАБОТАЕТ");
+        Serial.print("Количество импульсов: ");
+        Serial.println(systemController->getSensors().getFlowPulseCount());
+        Serial.print("Время последнего импульса: ");
+        Serial.print(systemController->getSensors().getTimeSinceLastPulse());
+        Serial.println(" мс назад");
+        Serial.print("Текущая скорость потока: ");
+        Serial.print(systemController->getCurrentFlowRate(), 2);
+        Serial.println(" л/мин");
+        Serial.print("Поток обнаружен: ");
+        Serial.println(systemController->isWaterFlowing() ? "ДА" : "НЕТ");
+        Serial.println("--------------------------------------------------------");
+      }
+      lastDiagnosticTime = millis();
+    }
+    
+    // Проверяем таймаут сессии
+    if ((millis() - sessionStartTime) > WIFI_SESSION_TIMEOUT_MS) {
+      if (DEBUG_SERIAL) {
+        Serial.println("WiFi сессия истекла, отключаем WiFi");
+      }
+      stopWiFiSession();
+    }
+  }
+}
+
+void WebServerManager::startWiFiSession() {
+  if (wifiSessionActive) {
+    if (DEBUG_SERIAL) {
+      Serial.println("WiFi сессия уже активна");
+    }
+    return;
+  }
+  
   // Запуск WiFi в режиме точки доступа
   startWiFiAP();
   
-  // Настройка маршрутов для WebServer
+  // Запуск веб-сервера
+  server.begin();
+  
+  // Обновляем состояние
+  wifiSessionActive = true;
+  sessionStartTime = millis();
+  
+  if (currentState) {
+    currentState->isWiFiEnabled = true;
+    currentState->wifiSessionStartTime = sessionStartTime;
+    currentState->systemMode = SYSTEM_MODE_WIFI_SESSION;
+  }
+  
+  if (DEBUG_SERIAL) {
+    Serial.println("=== WiFi СЕССИЯ ЗАПУЩЕНА ===");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.softAPIP());
+    Serial.print("SSID: ");
+    Serial.println(WIFI_SSID);
+    Serial.print("Пароль: ");
+    Serial.println(WIFI_PASSWORD);
+    Serial.println("Сессия активна 15 минут");
+    
+    // Диагностика датчика протока при запуске WiFi
+    if (systemController) {
+      Serial.println("--- ДИАГНОСТИКА ДАТЧИКА ПОТОКА ПРИ ЗАПУСКЕ WiFi ---");
+      Serial.print("Пин датчика потока (GPIO35): ");
+      Serial.println(digitalRead(FLOW_SENSOR_PIN) ? "HIGH" : "LOW");
+      Serial.print("Состояние датчика: ");
+      Serial.println(systemController->getSensors().isFlowSensorWorking() ? "РАБОТАЕТ" : "НЕ РАБОТАЕТ");
+      Serial.print("Количество импульсов: ");
+      Serial.println(systemController->getSensors().getFlowPulseCount());
+      Serial.print("Время последнего импульса: ");
+      Serial.print(systemController->getSensors().getTimeSinceLastPulse());
+      Serial.println(" мс назад");
+      Serial.print("Текущая скорость потока: ");
+      Serial.print(systemController->getCurrentFlowRate(), 2);
+      Serial.println(" л/мин");
+      Serial.print("Поток обнаружен: ");
+      Serial.println(systemController->isWaterFlowing() ? "ДА" : "НЕТ");
+      Serial.println("-----------------------------------------------");
+    }
+    
+    Serial.println("========================");
+  }
+}
+
+void WebServerManager::stopWiFiSession() {
+  if (!wifiSessionActive) {
+    return;
+  }
+  
+  // Останавливаем веб-сервер
+  server.stop();
+  
+  // Отключаем WiFi
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_OFF);
+  
+  // Обновляем состояние
+  wifiSessionActive = false;
+  sessionStartTime = 0;
+  
+  if (currentState) {
+    currentState->isWiFiEnabled = false;
+    currentState->wifiSessionStartTime = 0;
+    currentState->systemMode = SYSTEM_MODE_ACTIVE;
+  }
+  
+  if (DEBUG_SERIAL) {
+    Serial.println("=== WiFi СЕССИЯ ОСТАНОВЛЕНА ===");
+    Serial.println("WiFi отключен для экономии энергии");
+    
+    // Диагностика датчика протока при остановке WiFi
+    if (systemController) {
+      Serial.println("--- ДИАГНОСТИКА ДАТЧИКА ПОТОКА ПРИ ОСТАНОВКЕ WiFi ---");
+      Serial.print("Пин датчика потока (GPIO35): ");
+      Serial.println(digitalRead(FLOW_SENSOR_PIN) ? "HIGH" : "LOW");
+      Serial.print("Состояние датчика: ");
+      Serial.println(systemController->getSensors().isFlowSensorWorking() ? "РАБОТАЕТ" : "НЕ РАБОТАЕТ");
+      Serial.print("Количество импульсов: ");
+      Serial.println(systemController->getSensors().getFlowPulseCount());
+      Serial.print("Время последнего импульса: ");
+      Serial.print(systemController->getSensors().getTimeSinceLastPulse());
+      Serial.println(" мс назад");
+      Serial.print("Текущая скорость потока: ");
+      Serial.print(systemController->getCurrentFlowRate(), 2);
+      Serial.println(" л/мин");
+      Serial.print("Поток обнаружен: ");
+      Serial.println(systemController->isWaterFlowing() ? "ДА" : "НЕТ");
+      Serial.println("------------------------------------------------");
+    }
+    
+    Serial.println("===============================");
+  }
+}
+
+bool WebServerManager::isWiFiSessionActive() const {
+  return wifiSessionActive;
+}
+
+unsigned long WebServerManager::getSessionTimeLeft() const {
+  if (!wifiSessionActive) {
+    return 0;
+  }
+  
+  unsigned long elapsed = millis() - sessionStartTime;
+  if (elapsed >= WIFI_SESSION_TIMEOUT_MS) {
+    return 0;
+  }
+  
+  return WIFI_SESSION_TIMEOUT_MS - elapsed;
+}
+
+void WebServerManager::updateStatus(SystemState& state) {
+  currentState = &state;
+}
+
+void WebServerManager::setSystemController(SystemController* controller) {
+  systemController = controller;
+}
+
+void WebServerManager::setupRoutes() {
   server.on("/", HTTP_GET, [this]() { 
     server.send(200, "text/html", getMainPage()); 
   });
@@ -118,24 +300,6 @@ void WebServerManager::begin() {
   server.onNotFound([this]() { 
     server.send(404, "application/json", "{\"error\":\"Not found\"}"); 
   });
-  
-  server.begin();
-  
-  if (DEBUG_SERIAL) {
-    Serial.println("Web server started");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.softAPIP());
-    Serial.print("SSID: ");
-    Serial.println(WIFI_SSID);
-  }
-}
-
-void WebServerManager::handleClient() {
-  server.handleClient();
-}
-
-void WebServerManager::updateStatus(SystemState& state) {
-  currentState = &state;
 }
 
 void WebServerManager::handleSaveConfig() {
@@ -151,6 +315,13 @@ void WebServerManager::handleSaveConfig() {
         float newTemp = doc["targetTemp"];
         if (newTemp >= TARGET_TEMP_MIN && newTemp <= TARGET_TEMP_MAX) {
           currentState->targetTemp = newTemp;
+          // Передаем новое значение в SystemController
+          if (systemController) {
+            systemController->setTargetTemperature(newTemp);
+            if (DEBUG_SERIAL) {
+              Serial.println("SystemController target temperature updated to: " + String(newTemp) + "°C");
+            }
+          }
           configChanged = true;
           if (DEBUG_SERIAL) {
             Serial.println("Target temperature updated to: " + String(newTemp) + "°C");
@@ -164,7 +335,7 @@ void WebServerManager::handleSaveConfig() {
         if (newFactor >= FLOW_CALIBRATION_MIN && newFactor <= FLOW_CALIBRATION_MAX) {
           currentState->flowCalibrationFactor = newFactor;
           // Обновляем коэффициент в датчике
-          sensors.setCalibrationFactor(newFactor);
+          systemController->getSensors().setCalibrationFactor(newFactor);
           configChanged = true;
           if (DEBUG_SERIAL) {
             Serial.println("Flow calibration factor updated to: " + String(newFactor) + " imp/L");
@@ -206,8 +377,8 @@ void WebServerManager::handleCalibrate() {
   if (currentState) {
     // Запуск калибровки датчика протока
     TerminalManager::addLog("🔧 Запуск калибровки датчика протока через веб-интерфейс");
-    sensors.calibrateFlowSensor();
-    currentState->flowCalibrationFactor = sensors.getCalibrationFactor();
+    systemController->getSensors().calibrateFlowSensor();
+    currentState->flowCalibrationFactor = systemController->getSensors().getCalibrationFactor();
     
     server.send(200, "application/json", "{\"status\":\"calibration_completed\", \"factor\":" + String(currentState->flowCalibrationFactor) + "}");
     
@@ -250,7 +421,7 @@ String WebServerManager::getStatusJSON() {
   doc["targetTemp"] = currentState->targetTemp;
   doc["flowRate"] = currentState->flowRate;
   doc["flowCalibrationFactor"] = currentState->flowCalibrationFactor;
-  doc["flowPulseCount"] = sensors.getFlowPulseCount();
+  doc["flowPulseCount"] = systemController->getSensors().getFlowPulseCount();
   doc["isHeating"] = currentState->isHeating;
   doc["isFlowDetected"] = currentState->isFlowDetected;
   doc["isThermalFuseOK"] = currentState->isThermalFuseOK;
@@ -295,8 +466,47 @@ String WebServerManager::getStatusJSON() {
 
 String WebServerManager::getConfigJSON() {
   DynamicJsonDocument doc(512);
-  doc["targetTemp"] = currentState ? currentState->targetTemp : TARGET_TEMP_DEFAULT;
-  doc["flowCalibrationFactor"] = currentState ? currentState->flowCalibrationFactor : FLOW_CALIBRATION_FACTOR;
+  
+  // Читаем данные напрямую из EEPROM при каждом запросе
+  float targetTemp = TARGET_TEMP_DEFAULT;
+  float flowCalibrationFactor = FLOW_CALIBRATION_FACTOR;
+  
+  // Проверяем, есть ли валидная конфигурация в EEPROM
+  if (ConfigStorage::isValidConfig()) {
+    // Читаем данные из EEPROM
+    uint32_t magic;
+    EEPROM.get(0, magic); // MAGIC_NUMBER_ADDR = 0
+    
+    if (magic == 0x57415445) { // MAGIC_NUMBER
+      // Читаем структуру конфигурации
+      struct {
+        float targetTemp;
+        float flowCalibrationFactor;
+        uint32_t magic;
+      } config;
+      
+      EEPROM.get(4, config); // CONFIG_START_ADDR = 4
+      
+      // Проверяем валидность данных
+      if (config.targetTemp >= TARGET_TEMP_MIN && config.targetTemp <= TARGET_TEMP_MAX &&
+          config.flowCalibrationFactor >= FLOW_CALIBRATION_MIN && config.flowCalibrationFactor <= FLOW_CALIBRATION_MAX) {
+        targetTemp = config.targetTemp;
+        flowCalibrationFactor = config.flowCalibrationFactor;
+        
+        if (DEBUG_SERIAL) {
+          Serial.println("WebServer: Загружена конфигурация из EEPROM:");
+          Serial.println("Целевая температура: " + String(targetTemp, 1) + "°C");
+          Serial.println("Коэффициент калибровки: " + String(flowCalibrationFactor, 2) + " имп/л");
+        }
+      }
+    }
+  }
+  
+  // Устанавливаем значения в JSON
+  doc["targetTemp"] = targetTemp;
+  doc["flowCalibrationFactor"] = flowCalibrationFactor;
+  
+  // Добавляем константы конфигурации
   doc["flowThresholdMin"] = FLOW_THRESHOLD_MIN;
   doc["flowThresholdMax"] = FLOW_THRESHOLD_MAX;
   doc["flowCalibrationMin"] = FLOW_CALIBRATION_MIN;
@@ -320,7 +530,7 @@ void WebServerManager::startWiFiAP() {
   WiFi.softAP(WIFI_SSID, WIFI_PASSWORD, WIFI_CHANNEL, 1, WIFI_MAX_CONNECTIONS); // Скрытая сеть, фиксированный канал
   
   // Полная мощность WiFi для веб-интерфейса
-  WiFi.setTxPower(WIFI_TX_POWER_FULL); // 19.5dBm - полная мощность для веб-интерфейса
+  WiFi.setTxPower(WIFI_POWER_19_5dBm); // 19.5dBm - полная мощность для веб-интерфейса
   
   // Дополнительная оптимизация WiFi - устанавливаем максимальную мощность на уровне ESP-IDF
   esp_wifi_set_max_tx_power(WIFI_TX_POWER_FULL); // Полная мощность для веб-интерфейса
@@ -445,7 +655,7 @@ String WebServerManager::getSensorsInfoJSON() {
   if (currentState) {
     doc["values"]["temperature"] = currentState->currentTemp;
     doc["values"]["flowRate"] = currentState->flowRate;
-    doc["values"]["flowPulseCount"] = sensors.getFlowPulseCount();
+    doc["values"]["flowPulseCount"] = systemController->getSensors().getFlowPulseCount();
   }
   
   // Системная информация

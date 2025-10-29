@@ -1,99 +1,135 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// ========================================
+// КОНФИГУРАЦИЯ ПИНОВ ESP32
+// ========================================
+
+// Пины ESP32 для управления триаками
+#define TRIAC_L1_PIN 21    // Триак фазы L1
+#define TRIAC_L2_PIN 19    // Триак фазы L2  
+#define TRIAC_L3_PIN 18    // Триак фазы L3
+#define ZERO_CROSS_PIN 15  // Детектор пересечения нуля
+
+// Пины сенсоров
+#define NTC_PIN 34         // Датчик температуры NTC
+#define FLOW_SENSOR_PIN 35 // Датчик потока воды
+#define STATUS_LED_PIN 2   // Светодиод статуса
+#define BOOT_BUTTON_PIN 0  // Кнопка BOOT (встроенная кнопка ESP32)
+
+// Дополнительные пины (из веб-сервера)
+#define MOSFET_EN_PIN 4    // Пин управления MOSFET (если используется)
+
+// ========================================
+// НАСТРОЙКИ ПИД-РЕГУЛЯТОРА
+// ========================================
+
+#define PID_KP 0.8         // Пропорциональный коэффициент (снижен для стабильности)
+#define PID_KI 0.05        // Интегральный коэффициент (снижен для предотвращения перерегулирования)
+#define PID_KD 0.2         // Дифференциальный коэффициент (снижен для уменьшения колебаний)
+#define PID_OUTPUT_MIN 0.0  // Минимальный выход (0%)
+#define PID_OUTPUT_MAX 100.0 // Максимальный выход (100%)
+
+// Дополнительные настройки ПИД для стабильности
+#define PID_INTEGRAL_MAX 20.0  // Максимальное значение интегральной составляющей
+#define PID_INTEGRAL_MIN -20.0 // Минимальное значение интегральной составляющей
+#define PID_COMPUTE_INTERVAL_MS 100 // Интервал вычисления ПИД (мс)
+
+// ========================================
+// НАСТРОЙКИ ТЕМПЕРАТУРЫ
+// ========================================
+
+#define TARGET_TEMP 50.0           // Целевая температура по умолчанию (°C)
+#define TARGET_TEMP_DEFAULT 50.0   // Целевая температура по умолчанию
+#define TARGET_TEMP_MIN 30.0       // Минимальная целевая температура
+#define TARGET_TEMP_MAX 70.0        // Максимальная целевая температура
+#define TEMP_HYSTERESIS 1.0        // Гистерезис температуры
+#define MAX_TEMP_SAFETY 80.0        // Максимальная безопасная температура
+
+// ========================================
+// НАСТРОЙКИ ПОТОКА ВОДЫ
+// ========================================
+
+#define FLOW_THRESHOLD_MIN 0.1     // Минимальный порог потока (л/мин)
+#define FLOW_THRESHOLD_MAX 20.0     // Максимальный порог потока (л/мин)
+#define FLOW_CALIBRATION_FACTOR 400.0 // Коэффициент калибровки по умолчанию (имп/л)
+#define FLOW_CALIBRATION_MIN 100.0  // Минимальный коэффициент калибровки
+#define FLOW_CALIBRATION_MAX 1000.0 // Максимальный коэффициент калибровки
+
+// ========================================
+// НАСТРОЙКИ ФАЗОВОГО УПРАВЛЕНИЯ
+// ========================================
+
+// Фазовые смещения (120° = 6667 мкс для 50Гц)
+#define PHASE_SHIFT_US 6667        // Смещение между фазами
+#define HALF_PERIOD_US 10000        // Половина периода сети
+#define MIN_FIRE_DELAY_US 1000      // Минимальная задержка включения
+#define MAX_FIRE_DELAY_US 8500      // Максимальная задержка включения
+#define TRIAC_PULSE_US 1500         // Длительность импульса включения триака
+
+// Фильтрация частоты
+#define FREQ_FILTER_SAMPLES 5       // Количество образцов для фильтрации частоты
+
+// ========================================
+// НАСТРОЙКИ ДАТЧИКОВ
+// ========================================
+
+// Датчик потока
+#define PULSES_PER_LITER 400.0     // Импульсов на литр по умолчанию
+#define FLOW_TIMEOUT_MS 1000       // Таймаут отсутствия потока
+#define MIN_PULSE_INTERVAL_MS 10   // Минимальный интервал между импульсами
+
+// NTC датчик температуры
+#define NOMINAL_TEMP 25.0           // Номинальная температура
+#define NOMINAL_RESISTANCE 10000.0 // Сопротивление при 25°C
+#define BETA_COEFFICIENT 3950.0    // Бета-коэффициент
+#define SERIES_RESISTANCE 10000.0   // Подтягивающий резистор
+
+// Фильтрация датчиков
+#define FILTER_SAMPLES 5            // Количество образцов для фильтрации
+
+// ========================================
+// НАСТРОЙКИ СИСТЕМЫ
+// ========================================
+
+// Режимы работы системы
+#define SYSTEM_MODE_SLEEP 0         // Режим глубокого сна
+#define SYSTEM_MODE_ACTIVE 1        // Активная работа
+#define SYSTEM_MODE_WIFI_SESSION 2 // WiFi сессия
+
+// Временные настройки
+#define RAMP_UP_TIME_MS 2000        // Время разгона до полной мощности
+#define WIFI_SESSION_TIMEOUT_MS 900000 // Таймаут WiFi сессии (15 минут)
+
+// Настройки кнопки BOOT
+#define BOOT_BUTTON_DEBOUNCE_MS 50   // Защита от дребезга кнопки
+#define BOOT_BUTTON_CLICK_TIMEOUT_MS 1000 // Таймаут между нажатиями для тройного клика
+#define BOOT_BUTTON_CLICKS_REQUIRED 3     // Количество нажатий для активации WiFi
+
+// Защитные настройки
+#define MIN_FLOW_RATE_DEFAULT 0.5   // Минимальный поток по умолчанию
+#define MIN_TEMP_DEFAULT 40.0       // Минимальная температура
+#define MAX_TEMP_DEFAULT 65.0       // Максимальная температура
+
+// ========================================
+// НАСТРОЙКИ WiFi И ВЕБ-СЕРВЕРА
+// ========================================
+
 // WiFi настройки
-#define WIFI_SSID "WaterHeater"
-#define WIFI_PASSWORD "12345678"
-#define WIFI_AP_MODE true
-#define WIFI_TX_POWER_FULL WIFI_POWER_19_5dBm  // Полная мощность для веб-интерфейса
-#define WIFI_TX_POWER_LOW WIFI_POWER_5dBm      // Минимальная мощность для пробуждения
-#define WIFI_CHANNEL 1       // Фиксированный канал для стабильности
-#define WIFI_MAX_CONNECTIONS 4  // Максимум 4 подключения
-#define WIFI_SESSION_TIMEOUT_MS 900000  // 15 минут работы WiFi
-
-// Кнопка управления
-#define BOOT_BUTTON_PIN 0    // GPIO0 - кнопка BOOT
-#define BOOT_BUTTON_DEBOUNCE_MS 50
-#define BOOT_DOUBLE_CLICK_TIMEOUT_MS 500  // Таймаут для двойного нажатия
-
-// Режимы работы
-#define SYSTEM_MODE_SLEEP 0
-#define SYSTEM_MODE_ACTIVE 1
-#define SYSTEM_MODE_WIFI_SESSION 2
-
-// Пины ESP32 с платой расширения HW-777
-#define NTC_PIN 34
-#define FLOW_SENSOR_PIN 35
-#define TRIAC_L1_PIN 21
-#define TRIAC_L2_PIN 19
-#define TRIAC_L3_PIN 18
-// Пин детектора нулевого перехода сети (для фазового управления MOC3023)
-#define ZERO_CROSS_PIN 15
-
-// Управление модулем MOSFET (подача 5В на общий блок реле)
-#define MOSFET_EN_PIN 4
-
-// Светодиод индикации
-#define STATUS_LED_PIN 2  // D2 - встроенный светодиод ESP32
-
-// Настройки температуры
-#define TARGET_TEMP_MIN 40.0
-#define TARGET_TEMP_MAX 65.0
-#define TARGET_TEMP_DEFAULT 50.0
-#define MIN_TEMP 35.0
-#define MAX_TEMP 70.0
-#define TEMP_HYSTERESIS 2.0
-#define MAX_TEMP_SAFETY 80.0
-#define SAFETY_TIMEOUT 30000  // 30 секунд
-
-// Настройки протока
-#define FLOW_THRESHOLD_MIN 0.5  // л/мин
-#define FLOW_THRESHOLD_MAX 1.0  // л/мин
-#define FLOW_THRESHOLD 1.0      // л/мин
-#define FLOW_HYSTERESIS 0.3     // л/мин - гистерезис для предотвращения ложных отключений
-#define FLOW_TIMEOUT_MS 2000    // мс - время ожидания перед отключением при отсутствии протока
-#define FLOW_CALIBRATION_FACTOR 7.5  // импульсов на литр (настраивается)
-#define FLOW_CALIBRATION_MIN 1.0    // минимальный коэффициент калибровки
-#define FLOW_CALIBRATION_MAX 1000.0 // максимальный коэффициент калибровки
-
-// Настройки NTC
-#define NTC_BETA 3950.0
-#define NTC_NOMINAL_TEMP 25.0
-#define NTC_NOMINAL_RESISTANCE 10000.0
-#define NTC_SERIES_RESISTANCE 10000.0
-
-// Мониторинг в Serial порт
-#define SERIAL_MONITOR_INTERVAL 1000      // Интервал вывода данных в Serial (мс)
-
-// Настройки нагрева
-#define HEATING_POWER_STEPS 100  // шагов для алгоритма Bresenham
-#define MIN_POWER_PERCENT 10
-#define MAX_POWER_PERCENT 100
-#define POWER_RAMP_TIME_MS 2000  // 2 секунды для плавного выхода на полную мощность
-#define POWER_RAMP_STEP_MS 40    // шаг изменения мощности каждые 40мс для плавного разгона за 2 сек
-
-// Настройки безопасности
-#define THERMAL_FUSE_PIN 16  // Пин термопредохранителя
-#define SAFETY_CHECK_INTERVAL 1000  // мс
-#define MAX_HEATING_TIME 3000    // 3 секунды без протока для быстрого отключения
-#define RELAY_SAFETY_DELAY 100  // Задержка включения реле для безопасности
-
-// Дополнительные параметры безопасности
-#define MAX_POWER_CHANGE_PER_CYCLE 5     // Максимальное изменение мощности за цикл (%) - уменьшено для плавного разгона
-#define MAX_POWER_AT_LOW_FLOW 70          // Максимальная мощность при малом протоке (%) - увеличено
-#define MAX_POWER_AT_HIGH_TEMP 50         // Максимальная мощность при высокой температуре (%) - увеличено
-#define POWER_RAMP_TIMEOUT_MS 5000        // Таймаут разгона мощности (мс)
-#define SYSTEM_WATCHDOG_TIMEOUT_MS 5000   // Таймаут watchdog системы (мс)
-#define TEMP_RANGE_MIN -10.0              // Минимальная допустимая температура
-#define TEMP_RANGE_MAX 82.0              // Максимальная допустимая температура
-#define FLOW_RANGE_MAX 100.0              // Максимальный допустимый проток
+#define WIFI_SSID "WaterHeater"     // Имя точки доступа
+#define WIFI_PASSWORD "12345678"    // Пароль точки доступа
+#define WIFI_CHANNEL 1              // Канал WiFi
+#define WIFI_MAX_CONNECTIONS 4      // Максимальное количество подключений
+#define WIFI_TX_POWER_FULL 19.5     // Полная мощность передачи (dBm)
 
 // Веб-сервер
-#define WEB_SERVER_PORT 80
-#define CONFIG_JSON_SIZE 1024
+#define CONFIG_JSON_SIZE 1024       // Размер JSON конфигурации
+#define DEBUG_SERIAL true           // Включить отладочный вывод
 
-// Отладка
-#define DEBUG_SERIAL true
-#define SENSOR_READ_INTERVAL 100  // мс
+// ========================================
+// НАСТРОЙКИ ПОСЛЕДОВАТЕЛЬНОГО ПОРТА
+// ========================================
+
+#define SERIAL_BAUD_RATE 115200     // Скорость последовательного порта
 
 #endif

@@ -2,64 +2,41 @@
 #define CONFIG_STORAGE_H
 
 #include <EEPROM.h>
-#include <ArduinoJson.h>
 #include "config.h"
+#include "system_state.h"
 
-// Структура для сохранения конфигурации в EEPROM
-struct ConfigData {
-  // Версия конфигурации для совместимости
-  uint32_t version = 1;
-  
-  // Настройки температуры
-  float targetTemp;
-  float tempHysteresis;
-  
-  // Настройки протока
-  float flowThreshold;
-  float flowCalibration;
-  
-  // Настройки безопасности
-  float maxTemp;
-  float minTemp;
-  unsigned long safetyTimeout;
-  
-  // Настройки нагрева
-  float heatingPower;
-  unsigned long heatingDelay;
-  
-  // Калибровка температуры
-  float tempOffset;
-  float tempSlope;
-  
-  // Настройки WiFi
-  char wifiSSID[32];
-  char wifiPassword[64];
-  
-  // Флаги
-  bool isCalibrated;
-  bool isConfigured;
-  
-  // Контрольная сумма
-  uint32_t checksum;
-};
-
-// Константы для EEPROM
-#define CONFIG_VERSION 1
-#define EEPROM_SIZE 512
-#define CONFIG_ADDRESS 0
-
-// Функции для работы с конфигурацией
 class ConfigStorage {
 public:
-  static void begin();
-  static bool loadConfig(ConfigData& config);
-  static bool saveConfig(const ConfigData& config);
-  static void resetToDefaults(ConfigData& config);
-  static bool validateConfig(const ConfigData& config);
-  static uint32_t calculateChecksum(const ConfigData& config);
-  
+    // Инициализация EEPROM
+    static void begin();
+    
+    // Сохранение конфигурации
+    static bool saveConfig(const SystemState& state);
+    
+    // Загрузка конфигурации
+    static bool loadConfig(SystemState& state);
+    
+    // Сброс к настройкам по умолчанию
+    static void resetToDefaults(SystemState& state);
+    
+    // Проверка валидности данных в EEPROM
+    static bool isValidConfig();
+    
 private:
-  static bool isEEPROMInitialized;
+    // Адреса в EEPROM
+    static const int EEPROM_SIZE = 512;
+    static const int MAGIC_NUMBER_ADDR = 0;
+    static const int CONFIG_START_ADDR = 4;
+    
+    // Магическое число для проверки валидности
+    static const uint32_t MAGIC_NUMBER;
+    
+    // Структура конфигурации для EEPROM
+    struct EEPROMConfig {
+        float targetTemp;
+        float flowCalibrationFactor;
+        uint32_t magic;
+    };
 };
 
 #endif
